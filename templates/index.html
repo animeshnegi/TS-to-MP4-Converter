@@ -3,36 +3,36 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TS → MP4 Converter</title>
+  <title>TS → MP4 Turbo Converter</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <main class="container">
     <section class="card">
-      <div class="badge">FFmpeg powered</div>
+      <div class="topline"><div class="badge">FFmpeg TURBO</div><div class="target">75× target</div></div>
       <h1>TS → MP4</h1>
-      <p class="subtitle">Fast video conversion with live progress.</p>
+      <p class="subtitle">Upload multiple files. One converts at a time while the rest wait in the queue.</p>
 
-      <form id="uploadForm">
-        <label class="dropzone" id="dropzone">
-          <input id="fileInput" name="file" type="file" accept=".ts,video/mp2t" hidden>
-          <span class="icon">↑</span>
-          <strong id="fileLabel">Drop your .TS file here</strong>
-          <span>or click to browse</span>
-        </label>
-        <button id="convertBtn" type="submit" disabled>Convert to MP4</button>
-      </form>
+      <label class="dropzone" id="dropzone">
+        <input id="fileInput" type="file" accept=".ts,video/mp2t" multiple hidden>
+        <span class="icon">↑</span>
+        <strong>Drop your .TS files here</strong>
+        <span>or click to select multiple files</span>
+      </label>
 
-      <section id="progressPanel" class="progress-panel hidden">
-        <div class="status-row"><span id="statusText">Uploading…</span><strong id="percent">0%</strong></div>
-        <div class="progress"><div id="bar"></div></div>
-        <div class="details"><span id="speed">Speed: —</span><span id="eta">ETA: —</span></div>
+      <div class="actions">
+        <button id="uploadBtn" type="button" disabled>Upload selected files</button>
+        <button id="clearBtn" type="button" class="secondary" disabled>Clear completed</button>
+      </div>
+
+      <section class="summary">
+        <span><strong id="totalCount">0</strong> files</span>
+        <span><strong id="activeCount">0</strong> active</span>
+        <span><strong id="queueCount">0</strong> queued</span>
+        <span><strong id="doneCount">0</strong> complete</span>
       </section>
 
-      <section id="result" class="result hidden">
-        <div class="success">✓ Conversion complete</div>
-        <a id="download" class="download" href="#">Download MP4</a>
-      </section>
+      <section id="queue" class="queue"></section>
       <p id="error" class="error hidden"></p>
     </section>
   </main>

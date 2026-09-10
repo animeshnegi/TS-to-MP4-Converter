@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TS → MP4 Converter</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="container">
+    <section class="card">
+      <div class="badge">FFmpeg powered</div>
+      <h1>TS → MP4</h1>
+      <p class="subtitle">Fast video conversion with live progress.</p>
+
+      <form id="uploadForm">
+        <label class="dropzone" id="dropzone">
+          <input id="fileInput" name="file" type="file" accept=".ts,video/mp2t" hidden>
+          <span class="icon">↑</span>
+          <strong id="fileLabel">Drop your .TS file here</strong>
+          <span>or click to browse</span>
+        </label>
+        <button id="convertBtn" type="submit" disabled>Convert to MP4</button>
+      </form>
+
+      <section id="progressPanel" class="progress-panel hidden">
+        <div class="status-row"><span id="statusText">Uploading…</span><strong id="percent">0%</strong></div>
+        <div class="progress"><div id="bar"></div></div>
+        <div class="details"><span id="speed">Speed: —</span><span id="eta">ETA: —</span></div>
+      </section>
+
+      <section id="result" class="result hidden">
+        <div class="success">✓ Conversion complete</div>
+        <a id="download" class="download" href="#">Download MP4</a>
+      </section>
+      <p id="error" class="error hidden"></p>
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

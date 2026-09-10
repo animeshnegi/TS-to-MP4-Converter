@@ -17,6 +17,9 @@
   <meta name="twitter:description" content="Fast TS to MP4 conversion with multiple file uploads and queue processing.">
   <title>TS File Converter – Fast TS to MP4 Converter Online</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>
+    (()=>{const t=localStorage.getItem('ts-theme');if(t==='light')document.documentElement.classList.add('light');})();
+  </script>
   <script type="application/ld+json">
   {
     "@context":"https://schema.org",
@@ -33,7 +36,15 @@
 <body>
   <main class="container">
     <section class="card">
-      <div class="topline"><div class="badge">FFmpeg TURBO</div><div class="target">75× target</div></div>
+      <div class="topline">
+        <div class="badge">FFmpeg TURBO</div>
+        <div class="top-actions">
+          <div class="target">75× target</div>
+          <button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch theme">
+            <span class="theme-icon" aria-hidden="true">☀</span><span class="theme-label">Light</span>
+          </button>
+        </div>
+      </div>
       <h1>TS File Converter</h1>
       <p class="subtitle">Fast <strong>TS to MP4 converter</strong> for .TS video files. Upload multiple files and convert them one at a time with a live queue.</p>
 

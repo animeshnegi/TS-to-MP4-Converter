@@ -2,6 +2,7 @@ const input = document.getElementById('fileInput');
 const dropzone = document.getElementById('dropzone');
 const uploadBtn = document.getElementById('uploadBtn');
 const clearBtn = document.getElementById('clearBtn');
+const themeToggle = document.getElementById('themeToggle');
 const queueEl = document.getElementById('queue');
 const errorEl = document.getElementById('error');
 const totalCount = document.getElementById('totalCount');
@@ -11,6 +12,26 @@ const doneCount = document.getElementById('doneCount');
 
 const jobs = new Map();
 let selectedFiles = [];
+
+function applyTheme(theme) {
+  const light = theme === 'light';
+  document.documentElement.classList.toggle('light', light);
+  if (themeToggle) {
+    const icon = themeToggle.querySelector('.theme-icon');
+    const label = themeToggle.querySelector('.theme-label');
+    if (icon) icon.textContent = light ? '☾' : '☀';
+    if (label) label.textContent = light ? 'Dark' : 'Light';
+    themeToggle.setAttribute('aria-label', light ? 'Switch to dark theme' : 'Switch to light theme');
+    themeToggle.setAttribute('title', light ? 'Switch to dark theme' : 'Switch to light theme');
+  }
+}
+
+applyTheme(localStorage.getItem('ts-theme') || 'dark');
+themeToggle?.addEventListener('click', () => {
+  const next = document.documentElement.classList.contains('light') ? 'dark' : 'light';
+  localStorage.setItem('ts-theme', next);
+  applyTheme(next);
+});
 
 input.addEventListener('change', () => addFiles([...input.files]));
 ['dragenter', 'dragover'].forEach(type => dropzone.addEventListener(type, e => { e.preventDefault(); dropzone.classList.add('drag'); }));

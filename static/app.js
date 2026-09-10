@@ -26,7 +26,7 @@ function applyTheme(theme) {
   }
 }
 
-applyTheme(localStorage.getItem('ts-theme') || 'dark');
+applyTheme(localStorage.getItem('ts-theme') || 'light');
 themeToggle?.addEventListener('click', () => {
   const next = document.documentElement.classList.contains('light') ? 'dark' : 'light';
   localStorage.setItem('ts-theme', next);

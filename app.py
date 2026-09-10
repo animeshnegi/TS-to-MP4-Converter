@@ -22,6 +22,31 @@ JOBS = {}
 JOBS_LOCK = threading.Lock()
 
 
+def find_ffmpeg_tools():
+    """Find FFmpeg and FFprobe on Windows or Linux/Docker."""
+    ffmpeg = shutil.which("ffmpeg")
+    ffprobe = shutil.which("ffprobe")
+
+    if ffmpeg and ffprobe:
+        return ffmpeg, ffprobe
+
+    # WinGet installs Gyan FFmpeg under a versioned directory, so do not
+    # hard-code a specific FFmpeg version.
+    if os.name == "nt":
+        winget_root = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages"
+        candidates = sorted(winget_root.glob("Gyan.FFmpeg*/*/bin"), reverse=True)
+        for bin_dir in candidates:
+            candidate_ffmpeg = bin_dir / "ffmpeg.exe"
+            candidate_ffprobe = bin_dir / "ffprobe.exe"
+            if candidate_ffmpeg.exists() and candidate_ffprobe.exists():
+                return str(candidate_ffmpeg), str(candidate_ffprobe)
+
+    return "ffmpeg", "ffprobe"
+
+
+FFMPEG, FFPROBE = find_ffmpeg_tools()
+
+
 def allowed_file(filename):
     return Path(filename).suffix.lower() in ALLOWED_EXTENSIONS
 
@@ -29,7 +54,7 @@ def allowed_file(filename):
 def ffprobe_duration(path):
     try:
         result = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)],
+            [FFPROBE, "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)],
             capture_output=True, text=True, check=True,
         )
         return float(json.loads(result.stdout)["format"]["duration"])
@@ -43,7 +68,7 @@ def run_ffmpeg(job_id, input_path, output_path):
         JOBS[job_id].update(status="converting", progress=0, duration=duration)
 
     # Stream copy is intentionally preferred: it is normally much faster than re-encoding.
-    cmd = ["ffmpeg", "-hide_banner", "-y", "-i", str(input_path), "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output_path)]
+    cmd = [FFMPEG, "-hide_banner", "-y", "-i", str(input_path), "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output_path)]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     last_time = 0.0
     logs = []
@@ -69,7 +94,7 @@ def run_ffmpeg(job_id, input_path, output_path):
 
     # Some TS streams need remuxing/re-encoding. Fall back automatically.
     if return_code != 0:
-        fallback = ["ffmpeg", "-hide_banner", "-y", "-i", str(input_path), "-map", "0:v:0?", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output_path)]
+        fallback = [FFMPEG, "-hide_banner", "-y", "-i", str(input_path), "-map", "0:v:0?", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output_path)]
         proc = subprocess.Popen(fallback, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
         assert proc.stdout is not None
         for line in proc.stdout:

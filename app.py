@@ -63,7 +63,7 @@ def ffprobe_duration(path):
 
 
 def _run_process(job_id, cmd, duration):
-    """Run FFmpeg and update progress/speed without decoding the video."""
+    """Run FFmpeg and update progress/speed."""
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -95,12 +95,10 @@ def _run_process(job_id, cmd, duration):
 def run_ffmpeg(job_id, input_path, output_path):
     duration = ffprobe_duration(input_path)
     with JOBS_LOCK:
-        JOBS[job_id].update(status="converting", progress=0, duration=duration)
+        JOBS[job_id].update(status="converting", progress=0, duration=duration, mode="turbo")
 
-    # SUPER-FAST PATH:
-    # Stream copy means no video/audio decoding or encoding. We deliberately
-    # do NOT use +faststart here because FFmpeg documents that faststart runs
-    # a second pass over the MP4 and can take additional time.
+    # TURBO PATH 1: stream-copy both H.264 video and AAC audio.
+    # This is the fastest possible path when the TS streams are MP4-compatible.
     copy_cmd = [
         FFMPEG, "-hide_banner", "-nostdin", "-y",
         "-i", str(input_path),
@@ -112,19 +110,49 @@ def run_ffmpeg(job_id, input_path, output_path):
 
     return_code = _run_process(job_id, copy_cmd, duration)
 
-    # Fallback only when the original streams cannot be written to MP4.
-    # ultrafast is selected because conversion speed is the priority.
+    # TURBO PATH 2: if stream-copy fails (for example, damaged AAC), keep
+    # the H.264 video untouched and re-encode ONLY the audio. This avoids the
+    # expensive full video re-encode and is typically tens of times faster.
     if return_code != 0:
         with JOBS_LOCK:
-            JOBS[job_id]["progress"] = 0
-            JOBS[job_id]["speed"] = "-"
+            JOBS[job_id].update(progress=0, speed="-", mode="audio-repair")
+
+        try:
+            output_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+        audio_repair_cmd = [
+            FFMPEG, "-hide_banner", "-nostdin", "-y",
+            "-fflags", "+discardcorrupt",
+            "-i", str(input_path),
+            "-map", "0:v:0?", "-map", "0:a:0?",
+            "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
+            "-progress", "pipe:1", "-nostats",
+            str(output_path),
+        ]
+        return_code = _run_process(job_id, audio_repair_cmd, duration)
+
+    # FINAL FALLBACK: only genuinely incompatible/corrupt video reaches a
+    # full transcode. Speed is prioritized with the ultrafast preset.
+    if return_code != 0:
+        with JOBS_LOCK:
+            JOBS[job_id].update(progress=0, speed="-", mode="full-transcode")
+
+        try:
+            output_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
         fallback_cmd = [
             FFMPEG, "-hide_banner", "-nostdin", "-y",
+            "-fflags", "+discardcorrupt",
             "-i", str(input_path),
             "-map", "0:v:0?", "-map", "0:a:0?",
             "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
-            "-c:a", "aac", "-movflags", "+faststart",
+            "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
             "-progress", "pipe:1", "-nostats",
             str(output_path),
         ]
@@ -161,7 +189,7 @@ def upload():
     output_path = OUTPUT_DIR / f"{job_id}.mp4"
     file.save(input_path)
     with JOBS_LOCK:
-        JOBS[job_id] = {"status": "queued", "progress": 0, "filename": safe_name, "speed": "-", "duration": 0}
+        JOBS[job_id] = {"status": "queued", "progress": 0, "filename": safe_name, "speed": "-", "duration": 0, "mode": "turbo"}
     threading.Thread(target=run_ffmpeg, args=(job_id, input_path, output_path), daemon=True).start()
     return jsonify(job_id=job_id, filename=safe_name)
 

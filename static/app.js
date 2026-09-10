@@ -1,94 +1,172 @@
-const form = document.getElementById('uploadForm');
 const input = document.getElementById('fileInput');
 const dropzone = document.getElementById('dropzone');
-const label = document.getElementById('fileLabel');
-const button = document.getElementById('convertBtn');
-const panel = document.getElementById('progressPanel');
-const bar = document.getElementById('bar');
-const percent = document.getElementById('percent');
-const statusText = document.getElementById('statusText');
-const speed = document.getElementById('speed');
-const eta = document.getElementById('eta');
-const result = document.getElementById('result');
-const download = document.getElementById('download');
-const error = document.getElementById('error');
+const uploadBtn = document.getElementById('uploadBtn');
+const clearBtn = document.getElementById('clearBtn');
+const queueEl = document.getElementById('queue');
+const errorEl = document.getElementById('error');
+const totalCount = document.getElementById('totalCount');
+const activeCount = document.getElementById('activeCount');
+const queueCount = document.getElementById('queueCount');
+const doneCount = document.getElementById('doneCount');
 
-let selectedFile = null;
-let startedAt = 0;
+const jobs = new Map();
+let selectedFiles = [];
 
-function chooseFile(file) {
-  if (!file) return;
-  if (!file.name.toLowerCase().endsWith('.ts')) return showError('Please choose a .ts file.');
-  selectedFile = file;
-  label.textContent = `${file.name} (${formatBytes(file.size)})`;
-  button.disabled = false;
-  error.classList.add('hidden');
+input.addEventListener('change', () => addFiles([...input.files]));
+['dragenter', 'dragover'].forEach(type => dropzone.addEventListener(type, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
+['dragleave', 'drop'].forEach(type => dropzone.addEventListener(type, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+dropzone.addEventListener('drop', e => addFiles([...e.dataTransfer.files]));
+uploadBtn.addEventListener('click', uploadSelected);
+clearBtn.addEventListener('click', clearCompleted);
+
+function addFiles(files) {
+  const valid = files.filter(f => f.name.toLowerCase().endsWith('.ts'));
+  const invalid = files.length - valid.length;
+  if (invalid) showError(`${invalid} file(s) skipped. Only .ts files are supported.`);
+  selectedFiles.push(...valid);
+  renderSelected();
 }
 
-input.addEventListener('change', () => chooseFile(input.files[0]));
-['dragenter', 'dragover'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.add('drag'); }));
-['dragleave', 'drop'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.remove('drag'); }));
-dropzone.addEventListener('drop', ev => chooseFile(ev.dataTransfer.files[0]));
+function renderSelected() {
+  uploadBtn.disabled = selectedFiles.length === 0;
+  uploadBtn.textContent = selectedFiles.length > 1 ? `Upload ${selectedFiles.length} files` : 'Upload selected file';
+  input.value = '';
+}
 
-form.addEventListener('submit', async ev => {
-  ev.preventDefault();
-  if (!selectedFile) return;
-  button.disabled = true;
-  panel.classList.remove('hidden');
-  result.classList.add('hidden');
-  error.classList.add('hidden');
-  setProgress(0, 'Uploading…');
-  startedAt = performance.now();
+async function uploadSelected() {
+  const files = selectedFiles.splice(0);
+  renderSelected();
+  files.forEach(file => {
+    const id = `local-${crypto.randomUUID()}`;
+    jobs.set(id, { id, file, status: 'uploading', uploadProgress: 0, progress: 0, speed: '-', eta: '-', filename: file.name });
+    renderJob(id);
+    uploadOne(id).catch(err => failJob(id, err.message || 'Upload failed.'));
+  });
+}
 
-  const data = new FormData();
-  data.append('file', selectedFile);
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', '/upload');
-  xhr.upload.onprogress = e => {
-    if (e.lengthComputable) setProgress((e.loaded / e.total) * 10, 'Uploading…');
-  };
-  xhr.onload = () => {
-    if (xhr.status !== 200) return showError(JSON.parse(xhr.responseText).error || 'Upload failed.');
-    const job = JSON.parse(xhr.responseText);
-    poll(job.job_id);
-  };
-  xhr.onerror = () => showError('Network error during upload.');
-  xhr.send(data);
-});
+function uploadOne(id) {
+  return new Promise((resolve, reject) => {
+    const job = jobs.get(id);
+    const data = new FormData();
+    data.append('file', job.file);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/upload');
+    xhr.upload.onprogress = e => {
+      if (e.lengthComputable) {
+        job.uploadProgress = e.loaded / e.total * 100;
+        renderJob(id);
+      }
+    };
+    xhr.onload = () => {
+      let body = {};
+      try { body = JSON.parse(xhr.responseText); } catch (_) {}
+      if (xhr.status !== 200) return reject(new Error(body.error || 'Upload failed.'));
+      job.serverId = body.job_id;
+      job.status = 'queued';
+      job.uploadProgress = 100;
+      renderJob(id);
+      poll(id);
+      resolve();
+    };
+    xhr.onerror = () => reject(new Error('Network error during upload.'));
+    xhr.send(data);
+  });
+}
 
-async function poll(id) {
+async function poll(localId) {
+  const job = jobs.get(localId);
+  if (!job?.serverId) return;
   try {
-    const res = await fetch(`/status/${id}`, { cache: 'no-store' });
-    const job = await res.json();
-    if (job.status === 'queued') setProgress(10, 'Queued…');
-    else if (job.status === 'converting') {
-      const p = 10 + (Number(job.progress || 0) * 0.9);
-      setProgress(p, 'Converting…');
-      speed.textContent = `Speed: ${job.speed || '—'}`;
-      const elapsed = (performance.now() - startedAt) / 1000;
-      const remaining = Number(job.progress) > 0 ? elapsed * (100 - Number(job.progress)) / Number(job.progress) : 0;
-      eta.textContent = `ETA: ${remaining ? formatTime(remaining) : '—'}`;
-    } else if (job.status === 'complete') {
-      setProgress(100, 'Complete');
-      speed.textContent = 'Ready to download';
-      eta.textContent = '';
-      download.href = job.download;
-      result.classList.remove('hidden');
-      button.disabled = false;
+    const res = await fetch(`/status/${job.serverId}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error('Status request failed');
+    const server = await res.json();
+    job.status = server.status;
+    job.progress = Number(server.progress || 0);
+    job.speed = server.speed || '-';
+    job.duration = Number(server.duration || 0);
+    job.queuePosition = Number(server.queue_position || 0);
+    job.mode = server.mode || '';
+    job.download = server.download || '';
+    job.outputFilename = server.output_filename || `${job.filename.replace(/\.ts$/i, '')}.mp4`;
+    if (server.status === 'complete') {
+      job.progress = 100;
+      renderJob(localId);
       return;
-    } else if (job.status === 'error') return showError(job.error || 'Conversion failed.');
-    setTimeout(() => poll(id), 400);
+    }
+    if (server.status === 'error') {
+      job.error = server.error || 'Conversion failed.';
+      renderJob(localId);
+      return;
+    }
+    renderJob(localId);
+    setTimeout(() => poll(localId), 350);
   } catch (_) {
-    setTimeout(() => poll(id), 1000);
+    setTimeout(() => poll(localId), 1000);
   }
 }
 
-function setProgress(value, text) {
-  const v = Math.max(0, Math.min(100, value));
-  bar.style.width = `${v}%`;
-  percent.textContent = `${Math.round(v)}%`;
-  statusText.textContent = text;
+function renderJob(id) {
+  const job = jobs.get(id);
+  if (!job) return;
+  let card = document.getElementById(`job-${id}`);
+  if (!card) {
+    card = document.createElement('article');
+    card.id = `job-${id}`;
+    card.className = 'job-card';
+    queueEl.prepend(card);
+  }
+  const upload = Math.round(job.uploadProgress || 0);
+  const conversion = Math.round(job.progress || 0);
+  let status = job.status;
+  let label = status === 'uploading' ? `Uploading ${upload}%` : status === 'queued' ? (job.queuePosition ? `Queued · #${job.queuePosition}` : 'Queued') : status === 'converting' ? `Converting · ${job.mode === 'audio-repair' ? 'audio repair' : job.mode === 'full-transcode' ? 'full transcode' : 'turbo'}` : status === 'complete' ? 'Complete' : 'Error';
+  const eta = estimateEta(job);
+  card.innerHTML = `
+    <div class="job-head"><div class="filename" title="${escapeHtml(job.filename)}">${escapeHtml(job.filename)}</div><div class="job-status ${status}">${label}</div></div>
+    <div class="stage"><div class="stage-label"><span>Upload</span><b>${upload}%</b></div><div class="progress"><div style="width:${upload}%"></div></div></div>
+    <div class="stage"><div class="stage-label"><span>Conversion</span><b>${conversion}%</b></div><div class="progress"><div style="width:${conversion}%"></div></div></div>
+    <div class="job-details"><span>${job.status === 'converting' ? `Speed: ${escapeHtml(job.speed)}` : job.status === 'complete' ? 'Ready' : 'Waiting'}</span><span>${eta}</span></div>
+    ${job.status === 'complete' ? `<a class="download" href="${job.download}">Download ${escapeHtml(job.outputFilename)}</a>` : ''}
+    ${job.status === 'error' ? `<div class="job-error">${escapeHtml(job.error || 'Conversion failed.')}</div>` : ''}
+  `;
+  updateSummary();
 }
-function showError(message) { error.textContent = message; error.classList.remove('hidden'); button.disabled = false; }
-function formatBytes(bytes) { const units = ['B','KB','MB','GB','TB']; let i=0; while(bytes >= 1024 && i < units.length-1){bytes/=1024;i++;} return `${bytes.toFixed(i?1:0)} ${units[i]}`; }
-function formatTime(s) { s = Math.max(0, Math.round(s)); const m=Math.floor(s/60), sec=s%60; return `${m}m ${String(sec).padStart(2,'0')}s`; }
+
+function estimateEta(job) {
+  if (job.status !== 'converting' || !job.duration || !job.speed || job.speed === '-') return '';
+  const m = String(job.speed).match(/([0-9.]+)x/i);
+  if (!m || !job.progress) return 'ETA: —';
+  const seconds = job.duration * (100 - job.progress) / 100 / Number(m[1]);
+  return `ETA: ${formatTime(seconds)}`;
+}
+
+function updateSummary() {
+  const values = [...jobs.values()];
+  totalCount.textContent = values.length;
+  activeCount.textContent = values.filter(j => j.status === 'uploading' || j.status === 'converting').length;
+  queueCount.textContent = values.filter(j => j.status === 'queued').length;
+  doneCount.textContent = values.filter(j => j.status === 'complete').length;
+  clearBtn.disabled = !values.some(j => j.status === 'complete' || j.status === 'error');
+}
+
+function clearCompleted() {
+  for (const [id, job] of jobs) {
+    if (job.status === 'complete' || job.status === 'error') {
+      document.getElementById(`job-${id}`)?.remove();
+      jobs.delete(id);
+    }
+  }
+  updateSummary();
+}
+
+function failJob(id, message) {
+  const job = jobs.get(id);
+  if (!job) return;
+  job.status = 'error';
+  job.error = message;
+  renderJob(id);
+}
+
+function showError(message) { errorEl.textContent = message; errorEl.classList.remove('hidden'); setTimeout(() => errorEl.classList.add('hidden'), 5000); }
+function escapeHtml(value) { return String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+function formatTime(s) { s = Math.max(0, Math.round(s)); const m = Math.floor(s / 60), sec = s % 60; return `${m}m ${String(sec).padStart(2, '0')}s`; }
+updateSummary();

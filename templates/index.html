@@ -3,21 +3,45 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TS → MP4 Turbo Converter</title>
+  <meta name="description" content="Fast free TS file converter and TS to MP4 converter. Convert TS video files to MP4 online with multi-file upload, queue processing, progress tracking and FFmpeg turbo stream copy.">
+  <meta name="keywords" content="TS file converter, TS to MP4 converter, TS to MP4 convertor, convert TS to MP4, TS converter, TS video converter, MPEG TS converter, transport stream converter, TS file to MP4, convert .ts file to mp4, online TS converter, free TS to MP4 converter, fast TS converter">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="author" content="TS to MP4 Converter">
+  <link rel="canonical" href="{{ request.url_root }}">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="TS File Converter - Fast TS to MP4 Converter">
+  <meta property="og:description" content="Convert TS files to MP4 quickly with multi-file upload, a one-at-a-time conversion queue and live progress tracking.">
+  <meta property="og:url" content="{{ request.url_root }}">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="TS File Converter - TS to MP4 Converter">
+  <meta name="twitter:description" content="Fast TS to MP4 conversion with multiple file uploads and queue processing.">
+  <title>TS File Converter – Fast TS to MP4 Converter Online</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script type="application/ld+json">
+  {
+    "@context":"https://schema.org",
+    "@type":"WebApplication",
+    "name":"TS File Converter - TS to MP4 Converter",
+    "applicationCategory":"MultimediaApplication",
+    "operatingSystem":"Web Browser",
+    "description":"A fast TS file converter for converting .ts video files to MP4 with multi-file uploads, queue processing and live progress tracking.",
+    "offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},
+    "featureList":["TS to MP4 conversion","Multi-file upload","Conversion queue","Live upload progress","Live conversion progress","FFmpeg stream copy"]
+  }
+  </script>
 </head>
 <body>
   <main class="container">
     <section class="card">
       <div class="topline"><div class="badge">FFmpeg TURBO</div><div class="target">75× target</div></div>
-      <h1>TS → MP4</h1>
-      <p class="subtitle">Upload multiple files. One converts at a time while the rest wait in the queue.</p>
+      <h1>TS File Converter</h1>
+      <p class="subtitle">Fast <strong>TS to MP4 converter</strong> for .TS video files. Upload multiple files and convert them one at a time with a live queue.</p>
 
       <label class="dropzone" id="dropzone">
         <input id="fileInput" type="file" accept=".ts,video/mp2t" multiple hidden>
         <span class="icon">↑</span>
         <strong>Drop your .TS files here</strong>
-        <span>or click to select multiple files</span>
+        <span>or click to select multiple TS files</span>
       </label>
 
       <div class="actions">
@@ -34,6 +58,22 @@
 
       <section id="queue" class="queue"></section>
       <p id="error" class="error hidden"></p>
+
+      <section class="seo-copy">
+        <h2>Fast TS to MP4 Converter</h2>
+        <p>Use this free TS file converter to convert <strong>.TS</strong> (MPEG Transport Stream) video files into <strong>MP4</strong>. This TS converter supports multiple file uploads and processes one video at a time so your files are managed in an organized conversion queue.</p>
+        <h2>Convert TS Files to MP4</h2>
+        <p>Looking for a <strong>TS to MP4 converter</strong>, <strong>TS file converter</strong>, or even a “TS to MP4 convertor”? Select your TS files, upload them, and let the converter process each file. Compatible streams use FFmpeg stream copying for extremely fast conversion without unnecessary video re-encoding.</p>
+        <h2>Why use this TS converter?</h2>
+        <ul>
+          <li>Convert TS video files to MP4.</li>
+          <li>Upload multiple .TS files at once.</li>
+          <li>One conversion at a time with a FIFO queue.</li>
+          <li>Individual upload and conversion progress.</li>
+          <li>Live conversion speed and ETA.</li>
+          <li>Original filename preserved with the .mp4 extension.</li>
+        </ul>
+      </section>
     </section>
   </main>
   <script src="{{ url_for('static', filename='app.js') }}"></script>

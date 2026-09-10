@@ -58,29 +58,29 @@ def ffprobe_duration(path):
             capture_output=True, text=True, check=True,
         )
         return float(json.loads(result.stdout)["format"]["duration"])
-    except (Exception,):
+    except Exception:
         return 0.0
 
 
-def run_ffmpeg(job_id, input_path, output_path):
-    duration = ffprobe_duration(input_path)
-    with JOBS_LOCK:
-        JOBS[job_id].update(status="converting", progress=0, duration=duration)
-
-    # Stream copy is intentionally preferred: it is normally much faster than re-encoding.
-    cmd = [FFMPEG, "-hide_banner", "-y", "-i", str(input_path), "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output_path)]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-    last_time = 0.0
-    logs = []
+def _run_process(job_id, cmd, duration):
+    """Run FFmpeg and update progress/speed without decoding the video."""
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
     assert proc.stdout is not None
+
     for line in proc.stdout:
         line = line.strip()
         if not line:
             continue
         if line.startswith("out_time_ms="):
             try:
-                last_time = float(line.split("=", 1)[1]) / 1_000_000
-                progress = min(99.9, (last_time / duration) * 100) if duration else 0
+                current = float(line.split("=", 1)[1]) / 1_000_000
+                progress = min(99.9, (current / duration) * 100) if duration else 0
                 with JOBS_LOCK:
                     JOBS[job_id]["progress"] = progress
             except ValueError:
@@ -88,35 +88,54 @@ def run_ffmpeg(job_id, input_path, output_path):
         elif line.startswith("speed="):
             with JOBS_LOCK:
                 JOBS[job_id]["speed"] = line.split("=", 1)[1]
-        elif len(logs) < 30:
-            logs.append(line)
-    return_code = proc.wait()
 
-    # Some TS streams need remuxing/re-encoding. Fall back automatically.
+    return proc.wait()
+
+
+def run_ffmpeg(job_id, input_path, output_path):
+    duration = ffprobe_duration(input_path)
+    with JOBS_LOCK:
+        JOBS[job_id].update(status="converting", progress=0, duration=duration)
+
+    # SUPER-FAST PATH:
+    # Stream copy means no video/audio decoding or encoding. We deliberately
+    # do NOT use +faststart here because FFmpeg documents that faststart runs
+    # a second pass over the MP4 and can take additional time.
+    copy_cmd = [
+        FFMPEG, "-hide_banner", "-nostdin", "-y",
+        "-i", str(input_path),
+        "-map", "0:v:0?", "-map", "0:a:0?",
+        "-c", "copy",
+        "-progress", "pipe:1", "-nostats",
+        str(output_path),
+    ]
+
+    return_code = _run_process(job_id, copy_cmd, duration)
+
+    # Fallback only when the original streams cannot be written to MP4.
+    # ultrafast is selected because conversion speed is the priority.
     if return_code != 0:
-        fallback = [FFMPEG, "-hide_banner", "-y", "-i", str(input_path), "-map", "0:v:0?", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output_path)]
-        proc = subprocess.Popen(fallback, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-        assert proc.stdout is not None
-        for line in proc.stdout:
-            line = line.strip()
-            if line.startswith("out_time_ms="):
-                try:
-                    current = float(line.split("=", 1)[1]) / 1_000_000
-                    progress = min(99.9, (current / duration) * 100) if duration else 0
-                    with JOBS_LOCK:
-                        JOBS[job_id]["progress"] = progress
-                except ValueError:
-                    pass
-            elif line.startswith("speed="):
-                with JOBS_LOCK:
-                    JOBS[job_id]["speed"] = line.split("=", 1)[1]
-        return_code = proc.wait()
+        with JOBS_LOCK:
+            JOBS[job_id]["progress"] = 0
+            JOBS[job_id]["speed"] = "-"
+
+        fallback_cmd = [
+            FFMPEG, "-hide_banner", "-nostdin", "-y",
+            "-i", str(input_path),
+            "-map", "0:v:0?", "-map", "0:a:0?",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+            "-c:a", "aac", "-movflags", "+faststart",
+            "-progress", "pipe:1", "-nostats",
+            str(output_path),
+        ]
+        return_code = _run_process(job_id, fallback_cmd, duration)
 
     with JOBS_LOCK:
         if return_code == 0 and output_path.exists():
             JOBS[job_id].update(status="complete", progress=100, download=f"/download/{job_id}")
         else:
             JOBS[job_id].update(status="error", progress=0, error="FFmpeg could not convert this TS file.")
+
     try:
         input_path.unlink(missing_ok=True)
     except OSError:
